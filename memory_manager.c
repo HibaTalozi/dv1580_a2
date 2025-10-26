@@ -6,14 +6,18 @@
 #include <string.h>
 #include <stdint.h>
 
-// Simple thread-safe memory allocator using a fixed-size pool
+/*
+ * Simple thread-safe memory allocator using a fixed-size memory pool.
+ * It manages allocations manually inside a pre-allocated block of memory,
+ * supporting allocation, freeing, and resizing.
+ */
 
 #define ALIGNMENT 8
 #define ALIGN(sz) (((sz) + (ALIGNMENT - 1)) & ~((ALIGNMENT - 1)))
 
 typedef struct Block {
     size_t size;
-    int is_free;        // 1 = free, 0 = used
+    int is_free;        /* 1 = free, 0 = used */
     struct Block *next;
 } Block;
 
@@ -27,15 +31,24 @@ static pthread_mutex_t mem_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define USER_PTR_FROM_BLOCK(b) ((void *)((char *)(b) + HEADER_SIZE))
 #define BLOCK_FROM_USER_PTR(p) ((Block *)((char *)(p) - HEADER_SIZE))
 
+/* Get the next block in memory */
 static inline Block *next_physical_block(Block *b) {
     return (Block *)((char *)b + b->size);
 }
 
-// Initialize memory pool
+/*
+ * mem_init: initialize the memory pool
+ * @size: total size of the memory pool in bytes
+ * Allocates a large memory block that will serve as the custom memory pool.
+ * Thread-safe and reinitializes if already allocated.
+ */
 void mem_init(size_t size)
 {
     if (size == 0) size = 1;
+
     pthread_mutex_lock(&mem_mutex);
+
+    /* If already initialized, reset */
     if (mem_pool_start) {
         free(mem_pool_start);
         mem_pool_start = NULL;
@@ -52,7 +65,7 @@ void mem_init(size_t size)
         return;
     }
 
-    // Create first free block
+    /* Create the first free block */
     free_list_head = (Block *)mem_pool_start;
     free_list_head->size = mem_pool_total_size;
     free_list_head->is_free = 1;
@@ -61,8 +74,13 @@ void mem_init(size_t size)
     pthread_mutex_unlock(&mem_mutex);
 }
 
-
-// Split a free block if there is leftover space
+/*
+ * split_block: split a free block into two if it’s large enough
+ * @curr: current block to split
+ * @prev: previous block in the free list
+ * @required_size: total required size (header + user)
+ * Keeps one part allocated and the other as a smaller free block.
+ */
 static Block *split_block(Block *curr, Block *prev, size_t required_size)
 {
     size_t leftover = curr->size - required_size;
@@ -93,7 +111,12 @@ static Block *split_block(Block *curr, Block *prev, size_t required_size)
     return curr;
 }
 
-// Allocate memory (first-fit)
+/*
+ * mem_alloc: allocate memory from the pool (first-fit)
+ * @size: number of bytes requested
+ * Searches the free list for a suitable block, splits it if necessary,
+ * and returns a pointer to usable memory.
+ */
 void *mem_alloc(size_t size)
 {
     if (size == 0) size = 1;
@@ -121,7 +144,11 @@ void *mem_alloc(size_t size)
     return NULL;
 }
 
-// Rebuild free list and merge adjacent free blocks
+/*
+ * rebuild_free_list_and_coalesce: merge adjacent free blocks
+ * Scans the entire pool, merging physically adjacent free blocks
+ * and rebuilding the linked free list for optimal space reuse.
+ */
 static void rebuild_free_list_and_coalesce(void)
 {
     if (!mem_pool_start) return;
@@ -142,6 +169,7 @@ static void rebuild_free_list_and_coalesce(void)
 
         if (curr->is_free) {
             if (prev_free && (char *)prev_free + prev_free->size == (char *)curr) {
+                /* Merge adjacent free blocks */
                 prev_free->size += curr->size;
             } else {
                 if (prev_free)
@@ -161,33 +189,46 @@ static void rebuild_free_list_and_coalesce(void)
     }
 }
 
-// Free a previously allocated block
+/*
+ * mem_free: free a previously allocated block
+ * @ptr: pointer returned by mem_alloc()
+ * Marks the block as free and merges it if possible.
+ * Detects double frees and invalid pointers safely.
+ */
 void mem_free(void *ptr)
 {
     if (!ptr) return;
 
     pthread_mutex_lock(&mem_mutex);
 
+    /* Validate pointer */
     if ((char *)ptr < (char *)mem_pool_start ||
         (char *)ptr >= (char *)mem_pool_start + mem_pool_total_size) {
         fprintf(stderr, "WARNING: mem_free() called on pointer outside pool (%p)\n", ptr);
         pthread_mutex_unlock(&mem_mutex);
         return;
     }
+
     Block *hdr = BLOCK_FROM_USER_PTR(ptr);
     if (hdr->is_free) {
         fprintf(stderr, "WARNING: double free ignored (%p)\n", ptr);
         pthread_mutex_unlock(&mem_mutex);
         return;
     }
+
     hdr->is_free = 1;
     rebuild_free_list_and_coalesce();
+
     pthread_mutex_unlock(&mem_mutex);
 }
 
-
-
-// Resize (like realloc)
+/*
+ * mem_resize: resize a previously allocated block (like realloc)
+ * @block: pointer to existing memory
+ * @size: new desired size
+ * If the block is too small, a new one is allocated and data copied.
+ * Frees the old block after successful reallocation.
+ */
 void *mem_resize(void *block, size_t size)
 {
     if (!block) return mem_alloc(size);
@@ -224,7 +265,11 @@ void *mem_resize(void *block, size_t size)
     return new_block;
 }
 
-// Deinitialize and release memory pool
+/*
+ * mem_deinit: deinitialize the memory pool
+ * Frees the entire memory pool and resets internal state.
+ * Safe to call multiple times.
+ */
 void mem_deinit(void)
 {
     pthread_mutex_lock(&mem_mutex);

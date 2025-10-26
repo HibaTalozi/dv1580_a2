@@ -8,8 +8,7 @@
 
 static pthread_mutex_t head_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Memory pool setup.vMakes sure mem_init() runs before using mem_alloc().
-
+// Memory pool setup. Makes sure mem_init() runs before using mem_alloc().
 static int memory_initialized = 0;
 static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -22,13 +21,16 @@ static void ensure_memory_initialized(void) {
     pthread_mutex_unlock(&init_lock);
 }
 
-//list_init: initialize or reset the list
-
+// list_init: initialize or reset the list
 void list_init(Node **head, size_t size)
 {
     (void)size;
     ensure_memory_initialized();
-    if (!head) return;
+    
+    if (!head) {
+        fprintf(stderr, "ERROR: list_init() called with NULL head\n");
+        return;
+    }
 
     pthread_mutex_lock(&head_mutex);
     if (*head != NULL) {
@@ -44,10 +46,12 @@ void list_init(Node **head, size_t size)
 void list_insert(Node **head, uint16_t data)
 {
     ensure_memory_initialized();
+
     if (!head) {
         fprintf(stderr, "ERROR: list_insert() called with NULL head\n");
         return;
     }
+
     Node *new_node = (Node *)mem_alloc(sizeof(Node));
     if (!new_node) {
         fprintf(stderr, "ERROR: mem_alloc() failed in list_insert()\n");
@@ -73,17 +77,17 @@ void list_insert(Node **head, uint16_t data)
     pthread_mutex_unlock(&head_mutex);
 }
 
-
 // list_insert_after: insert node after given one
-
 void list_insert_after(Node *prev_node, uint16_t data)
 {
     ensure_memory_initialized();
-    if (!prev_node) return;
-
+    if (!prev_node) {
+        fprintf(stderr, "ERROR: list_insert_after() called with NULL prev_node\n");
+        return;
+    }
     Node *new_node = (Node *)mem_alloc(sizeof(Node));
     if (!new_node) {
-        printf_red("ERROR: Allocation failed.\n");
+        fprintf(stderr, "ERROR: mem_alloc() failed in list_insert_after()\n");
         return;
     }
 
@@ -97,9 +101,7 @@ void list_insert_after(Node *prev_node, uint16_t data)
     pthread_mutex_unlock(&prev_node->lock);
 }
 
-
 // list_insert_before: insert node before another
-
 void list_insert_before(Node **head, Node *next_node, uint16_t data)
 {
     ensure_memory_initialized();
@@ -109,7 +111,7 @@ void list_insert_before(Node **head, Node *next_node, uint16_t data)
 
     Node *new_node = (Node *)mem_alloc(sizeof(Node));
     if (!new_node) {
-        printf_red("ERROR: Allocation failed.\n");
+        fprintf(stderr, "ERROR: mem_alloc() failed in list_insert_before()\n");
         pthread_mutex_unlock(&head_mutex);
         return;
     }
@@ -143,16 +145,15 @@ void list_insert_before(Node **head, Node *next_node, uint16_t data)
     pthread_mutex_unlock(&head_mutex);
 }
 
-
 // list_delete: remove first node with given value
-
 void list_delete(Node **head, uint16_t data)
 {
     ensure_memory_initialized();
-    if (!head) return;
-
+    if (!head) {
+        fprintf(stderr, "ERROR: list_delete() called with NULL head\n");
+        return;
+    }
     pthread_mutex_lock(&head_mutex);
-
     if (*head == NULL) {
         pthread_mutex_unlock(&head_mutex);
         return;
@@ -183,7 +184,6 @@ void list_delete(Node **head, uint16_t data)
 }
 
 // list_search: find first node with given value
-
 Node *list_search(Node **head, uint16_t data)
 {
     if (!head) return NULL;
@@ -204,9 +204,7 @@ Node *list_search(Node **head, uint16_t data)
     return NULL;
 }
 
-
 // list_display_range: print nodes between two
-
 void list_display_range(Node **head, Node *start_node, Node *end_node)
 {
     pthread_mutex_lock(&head_mutex);

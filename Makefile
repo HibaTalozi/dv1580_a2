@@ -16,7 +16,7 @@ mmanager: memory_manager.c memory_manager.h
 
 list: linked_list.c linked_list.h test_linked_list.c
 	@echo "Building thread-safe linked list..."
-	$(CC) -Wall -Wextra -std=gnu11 -pthread -o test_linked_list linked_list.c test_linked_list.c -L. -lmemory_manager -lm
+	$(CC) $(CFLAGS) -o test_linked_list linked_list.c test_linked_list.c -L. -lmemory_manager -lm $(LDFLAGS)
 	@echo "test_linked_list built successfully! 😁"
 
 #Build and run memory manager tests
@@ -42,6 +42,7 @@ clean:
 	@echo "Clean done! 👍"
 
 .PHONY: all mmanager list test-mem run-mem run-list clean
+
 
 
 

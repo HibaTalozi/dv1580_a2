@@ -21,12 +21,12 @@ static void ensure_memory_initialized(void) {
     pthread_mutex_unlock(&init_lock);
 }
 
-// list_init: initialize or reset the list
+//initialize or reset the list
 void list_init(Node **head, size_t size)
 {
     (void)size;
     ensure_memory_initialized();
-    
+
     if (!head) {
         fprintf(stderr, "ERROR: list_init() called with NULL head\n");
         return;
@@ -42,7 +42,7 @@ void list_init(Node **head, size_t size)
     }
 }
 
-// list_insert: add a new node at the end
+//add a new node at the end
 void list_insert(Node **head, uint16_t data)
 {
     ensure_memory_initialized();
@@ -77,7 +77,7 @@ void list_insert(Node **head, uint16_t data)
     pthread_mutex_unlock(&head_mutex);
 }
 
-// list_insert_after: insert node after given one
+//insert node after given one
 void list_insert_after(Node *prev_node, uint16_t data)
 {
     ensure_memory_initialized();
@@ -101,7 +101,7 @@ void list_insert_after(Node *prev_node, uint16_t data)
     pthread_mutex_unlock(&prev_node->lock);
 }
 
-// list_insert_before: insert node before another
+//insert node before another
 void list_insert_before(Node **head, Node *next_node, uint16_t data)
 {
     ensure_memory_initialized();
@@ -115,7 +115,6 @@ void list_insert_before(Node **head, Node *next_node, uint16_t data)
         pthread_mutex_unlock(&head_mutex);
         return;
     }
-
     new_node->data = data;
     new_node->next = NULL;
     pthread_mutex_init(&new_node->lock, NULL);
@@ -145,7 +144,7 @@ void list_insert_before(Node **head, Node *next_node, uint16_t data)
     pthread_mutex_unlock(&head_mutex);
 }
 
-// list_delete: remove first node with given value
+//remove first node with given value
 void list_delete(Node **head, uint16_t data)
 {
     ensure_memory_initialized();
@@ -183,7 +182,7 @@ void list_delete(Node **head, uint16_t data)
     pthread_mutex_unlock(&head_mutex);
 }
 
-// list_search: find first node with given value
+//find first node with given value
 Node *list_search(Node **head, uint16_t data)
 {
     if (!head) return NULL;
@@ -204,7 +203,7 @@ Node *list_search(Node **head, uint16_t data)
     return NULL;
 }
 
-// list_display_range: print nodes between two
+//print nodes between two
 void list_display_range(Node **head, Node *start_node, Node *end_node)
 {
     pthread_mutex_lock(&head_mutex);
@@ -236,13 +235,13 @@ void list_display_range(Node **head, Node *start_node, Node *end_node)
     pthread_mutex_unlock(&head_mutex);
 }
 
-// list_display: print full list
+//print full list
 void list_display(Node **head)
 {
     list_display_range(head, NULL, NULL);
 }
 
-// list_count_nodes: count nodes safely
+//count nodes
 int list_count_nodes(Node **head)
 {
     if (!head) return 0;
@@ -267,7 +266,7 @@ int list_count_nodes(Node **head)
     return count;
 }
 
-// list_cleanup: free all nodes and reset memory
+//free all nodes and reset memory
 void list_cleanup(Node **head)
 {
     if (!head) return;

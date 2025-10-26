@@ -1,4 +1,3 @@
-// linked_list.c
 #include "linked_list.h"
 #include "memory_manager.h"
 #include "common_defs.h"
@@ -245,3 +244,4 @@ void list_cleanup(Node **head)
         curr = next;
     }
 }
+

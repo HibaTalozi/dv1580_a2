@@ -44,11 +44,13 @@ void list_init(Node **head, size_t size)
 void list_insert(Node **head, uint16_t data)
 {
     ensure_memory_initialized();
-    if (!head) return;
-
+    if (!head) {
+        fprintf(stderr, "ERROR: list_insert() called with NULL head\n");
+        return;
+    }
     Node *new_node = (Node *)mem_alloc(sizeof(Node));
     if (!new_node) {
-        printf_red("ERROR: Allocation failed.\n");
+        fprintf(stderr, "ERROR: mem_alloc() failed in list_insert()\n");
         return;
     }
 
@@ -57,7 +59,6 @@ void list_insert(Node **head, uint16_t data)
     pthread_mutex_init(&new_node->lock, NULL);
 
     pthread_mutex_lock(&head_mutex);
-
     if (*head == NULL) {
         *head = new_node;
         pthread_mutex_unlock(&head_mutex);

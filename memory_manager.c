@@ -170,23 +170,21 @@ void mem_free(void *ptr)
 
     if ((char *)ptr < (char *)mem_pool_start ||
         (char *)ptr >= (char *)mem_pool_start + mem_pool_total_size) {
-        fprintf(stderr, "WARNING: mem_free() called on pointer outside pool (%p) -- ignored\n", ptr);
+        fprintf(stderr, "WARNING: mem_free() called on pointer outside pool (%p)\n", ptr);
         pthread_mutex_unlock(&mem_mutex);
         return;
     }
-
     Block *hdr = BLOCK_FROM_USER_PTR(ptr);
     if (hdr->is_free) {
         fprintf(stderr, "WARNING: double free ignored (%p)\n", ptr);
         pthread_mutex_unlock(&mem_mutex);
         return;
     }
-
     hdr->is_free = 1;
     rebuild_free_list_and_coalesce();
-
     pthread_mutex_unlock(&mem_mutex);
 }
+
 
 
 // Resize (like realloc)

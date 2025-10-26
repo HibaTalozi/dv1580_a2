@@ -1,3 +1,11 @@
+# Builds a thread-safe linked list and a custom memory manager.
+# The memory manager is built as a shared library (libmemory_manager.so), 
+# and the linked list and tests are compiled using GCC with POSIX threads.
+# make clean: remove all compiled files
+# make: build everything
+# make run-mem: run test_memory_manager
+# make run-list: run test_linked_list
+
 CC = gcc
 CFLAGS = -Wall -Wextra -Wno-sign-compare -std=gnu11 -pthread -fPIC
 LDFLAGS = -pthread

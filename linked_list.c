@@ -6,12 +6,17 @@
 #include <string.h>
 #include <pthread.h>
 
+// Global mutex that protects the list head
 static pthread_mutex_t head_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Memory pool setup. Makes sure mem_init() runs before using mem_alloc().
+// Memory pool setup. Ensures mem_init() is called once before any allocations.
 static int memory_initialized = 0;
 static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/*
+ * ensure_memory_initialized: make sure memory manager is ready
+ * Initializes a large memory pool once. Thread-safe using a lock.
+ */
 static void ensure_memory_initialized(void) {
     pthread_mutex_lock(&init_lock);
     if (!memory_initialized) {
@@ -21,7 +26,13 @@ static void ensure_memory_initialized(void) {
     pthread_mutex_unlock(&init_lock);
 }
 
-//initialize or reset the list
+/*
+ * list_init: initialize or reset a linked list
+ * @head: pointer to the list head
+ * @size: optional size (unused, but required for interface)
+ * This function clears an existing list or initializes a new one.
+ * If the list already exists, it calls list_cleanup() to free all nodes.
+ */
 void list_init(Node **head, size_t size)
 {
     (void)size;
@@ -42,7 +53,13 @@ void list_init(Node **head, size_t size)
     }
 }
 
-//add a new node at the end
+/*
+ * list_insert: add a new node at the end
+ * @head: pointer to the list head
+ * @data: data value to store in the new node
+ * Allocates a new node and appends it at the end of the list.
+ * Handles memory allocation errors gracefully.
+ */
 void list_insert(Node **head, uint16_t data)
 {
     ensure_memory_initialized();
@@ -77,7 +94,13 @@ void list_insert(Node **head, uint16_t data)
     pthread_mutex_unlock(&head_mutex);
 }
 
-//insert node after given one
+/*
+ * list_insert_after: insert a new node after a given one
+ * @prev_node: node after which the new node should be inserted
+ * @data: value for the new node
+ * This function creates a new node and places it directly after
+ * the specified node. Thread-safe at the node level.
+ */
 void list_insert_after(Node *prev_node, uint16_t data)
 {
     ensure_memory_initialized();
@@ -85,6 +108,7 @@ void list_insert_after(Node *prev_node, uint16_t data)
         fprintf(stderr, "ERROR: list_insert_after() called with NULL prev_node\n");
         return;
     }
+
     Node *new_node = (Node *)mem_alloc(sizeof(Node));
     if (!new_node) {
         fprintf(stderr, "ERROR: mem_alloc() failed in list_insert_after()\n");
@@ -101,7 +125,14 @@ void list_insert_after(Node *prev_node, uint16_t data)
     pthread_mutex_unlock(&prev_node->lock);
 }
 
-//insert node before another
+/*
+ * list_insert_before: insert a node before another
+ * @head: pointer to the list head
+ * @next_node: node before which to insert
+ * @data: data value for the new node
+ * Inserts a new node just before a given node.
+ * If next_node is the head, the new node becomes the new head.
+ */
 void list_insert_before(Node **head, Node *next_node, uint16_t data)
 {
     ensure_memory_initialized();
@@ -144,7 +175,13 @@ void list_insert_before(Node **head, Node *next_node, uint16_t data)
     pthread_mutex_unlock(&head_mutex);
 }
 
-//remove first node with given value
+/*
+ * list_delete: delete the first node with matching value
+ * @head: pointer to the list head
+ * @data: value to search and remove
+ * Removes the first node that matches 'data'.
+ * Frees memory safely and handles edge cases (empty list, not found).
+ */
 void list_delete(Node **head, uint16_t data)
 {
     ensure_memory_initialized();
@@ -152,6 +189,7 @@ void list_delete(Node **head, uint16_t data)
         fprintf(stderr, "ERROR: list_delete() called with NULL head\n");
         return;
     }
+
     pthread_mutex_lock(&head_mutex);
     if (*head == NULL) {
         pthread_mutex_unlock(&head_mutex);
@@ -182,7 +220,13 @@ void list_delete(Node **head, uint16_t data)
     pthread_mutex_unlock(&head_mutex);
 }
 
-//find first node with given value
+/*
+ * list_search: find a node by value
+ * @head: pointer to the list head
+ * @data: value to look for
+ * Searches for the first node with the specified value.
+ * Returns a pointer to the node or NULL if not found.
+ */
 Node *list_search(Node **head, uint16_t data)
 {
     if (!head) return NULL;
@@ -203,7 +247,13 @@ Node *list_search(Node **head, uint16_t data)
     return NULL;
 }
 
-//print nodes between two
+/*
+ * print nodes from start_node to end_node
+ * @head: pointer to the list head
+ * @start_node: start point (NULL for beginning)
+ * @end_node: end point (NULL for full list)
+ * Prints the list contents in order.
+ */
 void list_display_range(Node **head, Node *start_node, Node *end_node)
 {
     pthread_mutex_lock(&head_mutex);
@@ -235,13 +285,19 @@ void list_display_range(Node **head, Node *start_node, Node *end_node)
     pthread_mutex_unlock(&head_mutex);
 }
 
-//print full list
+
+//print the entire list
 void list_display(Node **head)
 {
     list_display_range(head, NULL, NULL);
 }
 
-//count nodes
+/*
+ * list_count_nodes: count how many nodes are in the list
+ * @head: pointer to the list head
+ * Traverses the list and counts nodes safely.
+ * Includes a safety limit to detect cycles or corruption.
+ */
 int list_count_nodes(Node **head)
 {
     if (!head) return 0;
@@ -266,7 +322,12 @@ int list_count_nodes(Node **head)
     return count;
 }
 
-//free all nodes and reset memory
+/*
+ * list_cleanup: free all nodes and reset memory manager
+ * @head: pointer to the list head
+ * Frees all nodes and destroys their locks.
+ * Finally resets the memory pool safely.
+ */
 void list_cleanup(Node **head)
 {
     if (!head) return;

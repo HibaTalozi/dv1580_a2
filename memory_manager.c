@@ -6,15 +6,15 @@
 #include <string.h>
 #include <stdint.h>
 
-//Simple thread-safe allocator using a pre-allocated memory pool.
+// Simple thread-safe memory allocator using a fixed-size pool
 
 #define ALIGNMENT 8
 #define ALIGN(sz) (((sz) + (ALIGNMENT - 1)) & ~((ALIGNMENT - 1)))
 
 typedef struct Block {
-    size_t size;        
+    size_t size;
     int is_free;        // 1 = free, 0 = used
-    struct Block *next; 
+    struct Block *next;
 } Block;
 
 #define HEADER_SIZE ALIGN(sizeof(Block))
@@ -31,11 +31,11 @@ static inline Block *next_physical_block(Block *b) {
     return (Block *)((char *)b + b->size);
 }
 
-//Initialize the memory pool
+// Initialize memory pool
 void mem_init(size_t size)
 {
+    if (size == 0) size = 1;
     pthread_mutex_lock(&mem_mutex);
-
     if (mem_pool_start) {
         free(mem_pool_start);
         mem_pool_start = NULL;
@@ -43,24 +43,26 @@ void mem_init(size_t size)
         free_list_head = NULL;
     }
 
-    size_t total_size = ALIGN(size + 4 * HEADER_SIZE);
-    mem_pool_start = malloc(total_size);
+    mem_pool_total_size = ALIGN(size);
+    mem_pool_start = malloc(mem_pool_total_size);
+
     if (!mem_pool_start) {
         fprintf(stderr, "ERROR: mem_init failed\n");
         pthread_mutex_unlock(&mem_mutex);
         return;
     }
 
-    mem_pool_total_size = total_size;
+    // Create first free block
     free_list_head = (Block *)mem_pool_start;
-    free_list_head->size = total_size;
+    free_list_head->size = mem_pool_total_size;
     free_list_head->is_free = 1;
     free_list_head->next = NULL;
 
     pthread_mutex_unlock(&mem_mutex);
 }
 
-//Split a block if it's large enough
+
+// Split a free block if there is leftover space
 static Block *split_block(Block *curr, Block *prev, size_t required_size)
 {
     size_t leftover = curr->size - required_size;
@@ -91,7 +93,7 @@ static Block *split_block(Block *curr, Block *prev, size_t required_size)
     return curr;
 }
 
-//Allocate memory (first-fit)
+// Allocate memory (first-fit)
 void *mem_alloc(size_t size)
 {
     if (size == 0) size = 1;
@@ -99,7 +101,7 @@ void *mem_alloc(size_t size)
     pthread_mutex_lock(&mem_mutex);
 
     size_t aligned = ALIGN(size);
-    size_t required = aligned + HEADER_SIZE;
+    size_t required = ALIGN(aligned + HEADER_SIZE);
 
     Block *curr = free_list_head;
     Block *prev = NULL;
@@ -119,23 +121,27 @@ void *mem_alloc(size_t size)
     return NULL;
 }
 
-//Merge adjacent free blocks and rebuild free list
+// Rebuild free list and merge adjacent free blocks
 static void rebuild_free_list_and_coalesce(void)
 {
+    if (!mem_pool_start) return;
+
     Block *curr = (Block *)mem_pool_start;
     Block *prev_free = NULL;
     free_list_head = NULL;
 
-    while ((char *)curr < (char *)mem_pool_start + mem_pool_total_size) {
-        if ((char *)curr + curr->size >
-            (char *)mem_pool_start + mem_pool_total_size) {
-            fprintf(stderr, "ERROR: pool corruption\n");
+    char *pool_start = (char *)mem_pool_start;
+    char *pool_end = pool_start + mem_pool_total_size;
+
+    while ((char *)curr + HEADER_SIZE <= pool_end) {
+        if (curr->size == 0 || (char *)curr + curr->size > pool_end) {
+            fprintf(stderr, "ERROR: pool corruption at %p (size=%zu)\n",
+                    (void *)curr, curr->size);
             break;
         }
 
         if (curr->is_free) {
-            if (prev_free && 
-                (char *)prev_free + prev_free->size == (char *)curr) {
+            if (prev_free && (char *)prev_free + prev_free->size == (char *)curr) {
                 prev_free->size += curr->size;
             } else {
                 if (prev_free)
@@ -146,16 +152,28 @@ static void rebuild_free_list_and_coalesce(void)
                 prev_free->next = NULL;
             }
         }
-        curr = next_physical_block(curr);
+
+        Block *next = next_physical_block(curr);
+        if ((char *)next <= (char *)curr || (char *)next > pool_end)
+            break;
+
+        curr = next;
     }
 }
 
-//Free a block
+// Free a previously allocated block
 void mem_free(void *ptr)
 {
     if (!ptr) return;
 
     pthread_mutex_lock(&mem_mutex);
+
+    if ((char *)ptr < (char *)mem_pool_start ||
+        (char *)ptr >= (char *)mem_pool_start + mem_pool_total_size) {
+        fprintf(stderr, "WARNING: mem_free() called on pointer outside pool (%p) -- ignored\n", ptr);
+        pthread_mutex_unlock(&mem_mutex);
+        return;
+    }
 
     Block *hdr = BLOCK_FROM_USER_PTR(ptr);
     if (hdr->is_free) {
@@ -170,7 +188,8 @@ void mem_free(void *ptr)
     pthread_mutex_unlock(&mem_mutex);
 }
 
-//Resize a block
+
+// Resize (like realloc)
 void *mem_resize(void *block, size_t size)
 {
     if (!block) return mem_alloc(size);
@@ -182,10 +201,14 @@ void *mem_resize(void *block, size_t size)
     pthread_mutex_lock(&mem_mutex);
 
     Block *old_hdr = BLOCK_FROM_USER_PTR(block);
-    size_t old_total = old_hdr->size;
-    size_t old_user = (old_total >= HEADER_SIZE)
-                    ? old_total - HEADER_SIZE : 0;
+    if (old_hdr->is_free) {
+        fprintf(stderr, "WARNING: resize() called on freed block (%p)\n", block);
+        pthread_mutex_unlock(&mem_mutex);
+        return NULL;
+    }
 
+    size_t old_total = old_hdr->size;
+    size_t old_user = (old_total >= HEADER_SIZE) ? old_total - HEADER_SIZE : 0;
     size_t new_required = ALIGN(size) + HEADER_SIZE;
 
     if (new_required <= old_total) {
@@ -198,14 +221,12 @@ void *mem_resize(void *block, size_t size)
     void *new_block = mem_alloc(size);
     if (!new_block) return NULL;
 
-    size_t copy_size = (old_user < size) ? old_user : size;
-    memcpy(new_block, block, copy_size);
-
+    memcpy(new_block, block, old_user < size ? old_user : size);
     mem_free(block);
     return new_block;
 }
 
-// Release memory pool
+// Deinitialize and release memory pool
 void mem_deinit(void)
 {
     pthread_mutex_lock(&mem_mutex);
@@ -213,10 +234,10 @@ void mem_deinit(void)
     if (mem_pool_start) {
         free(mem_pool_start);
         mem_pool_start = NULL;
-        mem_pool_total_size = 0;
-        free_list_head = NULL;
     }
 
+    mem_pool_total_size = 0;
+    free_list_head = NULL;
+
     pthread_mutex_unlock(&mem_mutex);
-    pthread_mutex_destroy(&mem_mutex);
 }
